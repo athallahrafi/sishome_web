@@ -1,56 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { Thermometer, Droplets, Power, Activity, Clock, Sun, Moon, Info } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Konfigurasi URL API Backend
 const API_URL = 'http://localhost:5000/api'; 
+const GOOGLE_CLIENT_ID ='308867522259-d3vnpt26tlv3qpbu8m52e31jmifo11vp.apps.googleusercontent.com'
 
 const App = () => {
-  // States MQTT & Status
+  // Current User State
+  const [currentUser, setCurrentUser] = useState(null);
   const [brokerStatus, setBrokerStatus] = useState('Disconnected');
   const [deviceStatus, setDeviceStatus] = useState('Menunggu...');
   const [sensorData, setSensorData] = useState({ temperature: '--', humidity: '--' });
   const [relayState, setRelayState] = useState(false);
-  
-  // States Database
   const [logs, setLogs] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [chartData, setChartData] = useState([]);
-  
-  // States Form & UI
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [newScheduleTime, setNewScheduleTime] = useState('');
   const [newScheduleAction, setNewScheduleAction] = useState('ON');
 
-  // Profil User Saat Ini
-  const userProfile = { id: 1, name: 'Rafi Athallah', initials: 'RA' };
+  // Google OAuth Handler
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      const res = await axios.post(`${API_URL}/auth/google`, {
+        credential: credentialResponse.credential
+      });
+      localStorage.setItem('sishome_token', res.data.token);
+      localStorage.setItem('sishome_user', JSON.stringify(res.data.userData));
+      setCurrentUser(res.data.userData);
+      fetchAllData(); 
+    } catch (error) {
+      alert('Gagal login ke server SiSHome');
+    }
+  };
 
   // --- FUNGSI MENGAMBIL DATA DARI DATABASE ---
   const fetchAllData = async () => {
     try {
-      // 1. Ambil Jadwal
       const resSched = await axios.get(`${API_URL}/schedules`);
       setSchedules(resSched.data);
-
-      // 2. Ambil Log Aktivitas Relay
       const resLogs = await axios.get(`${API_URL}/logs`);
       setLogs(resLogs.data);
-
-      // 3. Ambil Data Grafik Sensor
       const resChart = await axios.get(`${API_URL}/chart`);
       setChartData(resChart.data);
     } catch (error) {
       console.error('Gagal mengambil data dari database', error);
     }
   };
+  useEffect(() => {
+    const savedUser = localStorage.getItem('sishome_user');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+      fetchAllData();
+    }
+  }, []);
 
   useEffect(() => {
-    // Tarik data awal dari Database
-    fetchAllData();
+    if (!currentUser) return; // Jika belum login, jangan hubungkan MQTT
 
-    // --- KONEKSI MQTT WEBSOCKETS ---
     const client = mqtt.connect('wss://f5c8801cf6d342bea2c68cbc379544ae.s1.eu.hivemq.cloud:8884/mqtt', {
       clientId: 'SiSHome_Web_' + Math.random().toString(16).substring(2, 8),
       username: 'SiSHome_Dev',
@@ -61,7 +72,6 @@ const App = () => {
 
     client.on('connect', () => {
       setBrokerStatus('Connected');
-      // Subscribe aktual sesuai program ESP32
       client.subscribe('SiSHome/degre');
       client.subscribe('SiSHome/humid');
       client.subscribe('SiSHome/relay');
@@ -70,17 +80,10 @@ const App = () => {
 
     client.on('message', (topic, message) => {
       const payload = message.toString();
-      
-      // Pemilahan topik aktual
-      if (topic === 'SiSHome/degre') {
-        setSensorData(prev => ({ ...prev, temperature: payload }));
-      } else if (topic === 'SiSHome/humid') {
-        setSensorData(prev => ({ ...prev, humidity: payload }));
-      } else if (topic === 'SiSHome/status_dht') {
-        setDeviceStatus(payload);
-      } else if (topic === 'SiSHome/relay') {
-        setRelayState(payload === 'ON');
-      }
+      if (topic === 'SiSHome/degre') setSensorData(prev => ({ ...prev, temperature: payload }));
+      else if (topic === 'SiSHome/humid') setSensorData(prev => ({ ...prev, humidity: payload }));
+      else if (topic === 'SiSHome/status_dht') setDeviceStatus(payload);
+      else if (topic === 'SiSHome/relay') setRelayState(payload === 'ON');
     });
 
     client.on('error', (err) => console.error('MQTT Error:', err));
@@ -89,42 +92,64 @@ const App = () => {
     return () => {
       if (client) client.end();
     };
-  }, []);
+  }, [currentUser]);
 
-  // --- HANDLER RELAY (POST KE BACKEND) ---
-  const toggleRelay = async () => {
-    const newAction = relayState ? 'OFF' : 'ON';
-    setRelayState(!relayState);
+    // --- HANDLER RELAY (POST KE BACKEND) ---
+    const toggleRelay = async () => {
+      const newAction = relayState ? 'OFF' : 'ON';
+      setRelayState(!relayState);
+      
+      try {
+        await axios.post(`${API_URL}/relay`, {
+          userId: currentUser.id,
+          action: newAction
+        });
+        fetchAllData();
+      } catch (error) {
+        alert('Gagal mengirim perintah relay ke server!');
+        setRelayState(relayState); 
+      }
+    };
+
+    // --- HANDLER JADWAL (POST KE BACKEND) ---
+    const handleAddSchedule = async (e) => {
+      e.preventDefault();
+      if (!newScheduleTime) return;
+
+      try {
+        await axios.post(`${API_URL}/schedules`, {
+          userId: currentUser.id,
+          targetTime: newScheduleTime,
+          action: newScheduleAction
+        });
+        setNewScheduleTime('');
+        fetchAllData(); 
+      } catch (error) {
+        alert('Gagal menyimpan jadwal ke database!');
+      }
+    };
+    if (!currentUser) {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <div className="min-h-screen bg-sishome-bg flex flex-col items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full text-center">
+            <Activity className="text-sishome-primary mx-auto mb-4" size={48} />
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Selamat Datang di SiSHome</h1>
+            <p className="text-gray-500 mb-8 text-sm">Silakan masuk untuk mengontrol dan memonitor perangkat IoT Anda.</p>
+            
+            <div className="flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => console.log('Login Gagal')}
+                useOneTap
+              />
+            </div>
+          </div>
+        </div>
+      </GoogleOAuthProvider>
+    );
+  }
     
-    try {
-      await axios.post(`${API_URL}/relay`, {
-        userId: userProfile.id,
-        action: newAction
-      });
-      fetchAllData();
-    } catch (error) {
-      alert('Gagal mengirim perintah relay ke server!');
-      setRelayState(relayState); 
-    }
-  };
-
-  // --- HANDLER JADWAL (POST KE BACKEND) ---
-  const handleAddSchedule = async (e) => {
-    e.preventDefault();
-    if (!newScheduleTime) return;
-
-    try {
-      await axios.post(`${API_URL}/schedules`, {
-        userId: userProfile.id,
-        targetTime: newScheduleTime,
-        action: newScheduleAction
-      });
-      setNewScheduleTime('');
-      fetchAllData(); 
-    } catch (error) {
-      alert('Gagal menyimpan jadwal ke database!');
-    }
-  };
 
   return (
     <div className={`min-h-screen p-4 md:p-6 font-sans transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-sishome-bg text-gray-800'}`}>
@@ -156,10 +181,15 @@ const App = () => {
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <div className="text-right hidden sm:block ml-2">
-              <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>{userProfile.name}</p>
+              <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>{currentUser.name}</p>
             </div>
-            <div className="w-10 h-10 bg-sishome-primary rounded-full flex items-center justify-center text-white font-bold shadow-md">
-              {userProfile.initials}
+            <div className="w-10 h-10 bg-sishome-primary rounded-full flex items-center justify-center text-white font-bold shadow-md overflow-hidden">
+              {/* Menampilkan Foto Profil Google jika ada, jika tidak pakai inisial huruf */}
+              {currentUser.avatar ? (
+                <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                currentUser.name.substring(0, 2).toUpperCase()
+              )}
             </div>
           </div>
         </div>
@@ -197,7 +227,7 @@ const App = () => {
         {/* Grafik */}
         <div className={`p-6 rounded-2xl shadow-sm lg:col-span-2 transition-colors duration-300 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
           <h2 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-blue-400' : 'text-sishome-primary'}`}>Tren Sensor (Dari Database)</h2>
-          <div className="h-72 w-full">
+          <div className="h-72 w-full min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#4B5563' : '#E5E7EB'} />

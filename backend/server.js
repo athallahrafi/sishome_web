@@ -5,6 +5,12 @@ const { Pool } = require('pg');
 // const { Pool } = require('@neondatabase/serverless');
 const mqtt = require('mqtt');
 const cron = require('node-cron');
+const { OAuth2Client } = require('google-auth-library');
+const jwt = require('jsonwebtoken');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+let latestRelayState = 'OFF';
+let lastTriggeredBy = 1;
 
 const app = express();
 app.use(cors());
@@ -15,7 +21,10 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL, // Ganti nama variabel env agar lebih universal
   ssl: { 
     rejectUnauthorized: false 
-  }
+  },
+  connectionTimeoutMillis: 10000, 
+  idleTimeoutMillis: 30000,       
+  keepAlive: true
   // ssl: false
 });
 pool.connect((err, client, release) => {
@@ -48,40 +57,84 @@ mqttClient.on('connect', () => {
   mqttClient.subscribe('SiSHome/relay');
 });
 
-mqttClient.on('message', (topic, message) => {
+// --- PENERIMA PESAN MQTT TERPADU ---
+mqttClient.on('message', async (topic, message) => {
   const payload = message.toString();
   try {
     if (topic === 'SiSHome/degre') {
       latestSensorData.temperature = parseFloat(payload);
-    } else if (topic === 'SiSHome/humid') {
+    } 
+    else if (topic === 'SiSHome/humid') {
       latestSensorData.humidity = parseFloat(payload);
-    } else if (topic === 'SiSHome/relay') {
+    } 
+    else if (topic === 'SiSHome/relay') {
       latestRelayState = payload;
-      console.log(`🔌 [Status Sync] Relay saat ini: ${latestRelayState}`);
+      console.log(`🔌 [Status Sync] ESP32 mengonfirmasi relay: ${latestRelayState}`);
+      
+      // Catat ke Database HANYA saat ESP32 memberikan feedback
+      await pool.query(
+        'INSERT INTO sishome_relay_logs (user_id, action) VALUES ($1, $2)',
+        [lastTriggeredBy, payload] 
+      );
     }
   } catch (error) {
-    console.error('Gagal memproses data sensor MQTT');
+    console.error('Gagal memproses/mencatat data MQTT:', error.message);
+  }
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  const { credential } = req.body; // Token KTP yang dikirim dari React
+
+  try {
+    // 1. Verifikasi keaslian token ke Server Google
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload(); // Berisi email, nama, foto profil
+    
+    // 2. Cek apakah user sudah ada di database Neon
+    let userResult = await pool.query('SELECT * FROM sishome_users WHERE email = $1', [payload.email]);
+    let user = userResult.rows[0];
+
+    // 3. Jika belum ada (User Baru), daftarkan otomatis (Auto-Register)
+    if (!user) {
+      const insertResult = await pool.query(
+        'INSERT INTO sishome_users (name, email, google_id, avatar_url) VALUES ($1, $2, $3, $4) RETURNING *',
+        [payload.name, payload.email, payload.sub, payload.picture]
+      );
+      user = insertResult.rows[0];
+    }
+
+    // 4. Buat Tiket Masuk (JWT) khusus untuk SiSHome
+    const sishomeToken = jwt.sign(
+      { id: user.id, email: user.email, name: user.name }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '7d' } // Sesi login berlaku 7 hari
+    );
+
+    // 5. Kirim data kembali ke React
+    res.status(200).json({ 
+      message: 'Login Berhasil', 
+      token: sishomeToken, 
+      userData: { id: user.id, name: user.name, avatar: user.avatar_url } 
+    });
+
+  } catch (error) {
+    console.error('❌ Error Google Auth:', error);
+    res.status(401).json({ error: 'Autentikasi Google Gagal' });
   }
 });
 
 // 3. API Endpoint: Toggle Relay dari Web
 app.post('/api/relay', async (req, res) => {
-  const { userId, action } = req.body; // action = 'ON' atau 'OFF'
-
+  const { userId, action } = req.body; 
   try {
-    // Publish perintah ke ESP32
-    mqttClient.publish('SiSHome/relay', action);
-
-    // Simpan history ke Database
-    await pool.query(
-      'INSERT INTO sishome_relay_logs (user_id, action) VALUES ($1, $2)',
-      [userId, action]
-    );
-
-    res.status(200).json({ message: `Relay diubah menjadi ${action}` });
+    lastTriggeredBy = userId; // Ingat siapa yang menekan tombol
+    mqttClient.publish('SiSHome/relay', action); // Kirim ke ESP32
+    res.status(200).json({ message: 'Perintah terkirim, menunggu balasan ESP32...' });
   } catch (error) {
-    console.error('Error API Relay:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Gagal mengirim perintah' });
   }
 });
 
@@ -96,19 +149,52 @@ app.get('/api/schedules', async (req, res) => {
 });
 
 // --- API: Membuat jadwal baru ---
+// --- API: Membuat jadwal baru ---
 app.post('/api/schedules', async (req, res) => {
-  // Potong string agar pasti berformat HH:MM (5 karakter)
   try {
-    const { userId, targetTime, action } = req.body; // targetTime format "HH:MM"
+    const { userId, targetTime, action } = req.body; 
     const timeFormatted = targetTime.substring(0, 5); 
+    
+    // PERBAIKAN: Tambahkan is_active ke dalam kueri
     await pool.query(
-      'INSERT INTO sishome_relay_schedules (user_id, target_time, action) VALUES ($1, $2, $3)',
-      [userId, timeFormatted, action]
+      'INSERT INTO sishome_relay_schedules (user_id, target_time, action, is_active) VALUES ($1, $2, $3, $4)',
+      [userId, timeFormatted, action, true] // true ditambahkan di sini
     );
     res.status(201).json({ message: 'Jadwal berhasil ditambahkan' });
   } catch (error) {
     console.error('❌ Error saat insert jadwal:', error.message);
     res.status(500).json({ error: 'Gagal menyimpan jadwal' });
+  }
+});
+
+app.get('/api/logs', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT rl.action, TO_CHAR(rl.created_at, 'HH24:MI:SS') as time, u.name as user_name 
+      FROM sishome_relay_logs rl 
+      JOIN sishome_users u ON rl.user_id = u.id 
+      ORDER BY rl.created_at DESC LIMIT 5
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('❌ Error mengambil logs:', error.message);
+    res.status(500).json([]);
+  }
+});
+
+// --- API: Mengambil Data Grafik Sensor (10 Pembacaan Terakhir) ---
+app.get('/api/chart', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at, 'HH24:MI') as time 
+      FROM sishome_sensor_logs 
+      ORDER BY created_at DESC LIMIT 10
+    `);
+    // Dibalik (reverse) agar grafik mengalir dari waktu terlama di kiri ke terbaru di kanan
+    res.json(result.rows.reverse()); 
+  } catch (error) {
+    console.error('❌ Error mengambil data chart:', error.message);
+    res.status(500).json([]);
   }
 });
 
@@ -120,32 +206,31 @@ cron.schedule('* * * * *', async () => {
 
   try {
     const result = await pool.query(
-      'SELECT id, action, user_id FROM sishome_relay_schedules WHERE target_time = $1 AND is_active = TRUE',
+      'SELECT id, action, user_id, repeat_mode FROM sishome_relay_schedules WHERE target_time = $1 AND is_active = TRUE',
       [currentHHMM]
     );
 
     for (const schedule of result.rows) {
-      // 1. Eksekusi MQTT ke ESP32 ('ON' / 'OFF')
+      lastTriggeredBy = schedule.user_id; // Set agar log MQTT tahu ini dari jadwal
       mqttClient.publish('SiSHome/relay', schedule.action);
       
-      // 2. Simpan Log
-      await pool.query(
-        'INSERT INTO sishome_relay_logs (user_id, action) VALUES ($1, $2)',
-        [schedule.user_id, `${schedule.action} (Auto)`]
-      );
-
-      // 3. Matikan status jadwal (Execute Once)
-      await pool.query(
-        'UPDATE sishome_relay_schedules SET is_active = FALSE WHERE id = $1',
-        [schedule.id]
-      );
-
-      console.log(`⏰ [Scheduler] Relay otomatis ${schedule.action} dieksekusi pukul ${currentHHMM}`);
+      // Matikan is_active HANYA JIKA mode-nya 'ONCE'
+      if (schedule.repeat_mode === 'ONCE') {
+        await pool.query(
+          'UPDATE sishome_relay_schedules SET is_active = FALSE WHERE id = $1',
+          [schedule.id]
+        );
+      }
+      // Jika 'DAILY', biarkan is_active tetap TRUE agar besok dieksekusi lagi
+      
+      console.log(`⏰ [Scheduler] Dieksekusi: ${schedule.action} (${schedule.repeat_mode})`);
     }
   } catch (error) {
     console.error('Scheduler Error:', error);
   }
 });
+
+
 
 // --- CRON JOB: Log Suhu & Kelembapan (Berjalan Setiap 15 Menit) ---
 cron.schedule('*/15 * * * *', async () => {
@@ -170,6 +255,7 @@ process.on('SIGINT', async () => {
   await pool.end();
   process.exit(0);
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server Backend aktif di port ${PORT}`));

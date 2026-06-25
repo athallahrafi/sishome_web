@@ -6,7 +6,7 @@ import { Thermometer, Droplets, Power, Activity, Clock, Sun, Moon, Info } from '
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Konfigurasi URL API Backend
-const API_URL = 'http://localhost:5000/api'; 
+const API_URL = 'https://sishome.myporto.online/api'; 
 const GOOGLE_CLIENT_ID ='308867522259-d3vnpt26tlv3qpbu8m52e31jmifo11vp.apps.googleusercontent.com'
 
 const App = () => {

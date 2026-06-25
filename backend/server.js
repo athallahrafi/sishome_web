@@ -47,7 +47,6 @@ const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL, {
 
 // Variabel penyimpan data sensor terakhir (karena dipisah topiknya oleh ESP32)
 let latestSensorData = { temperature: 0, humidity: 0 };
-let latestRelayState = 'OFF';
 
 mqttClient.on('connect', () => {
   console.log('✅ Backend terhubung ke HiveMQ Cloud');

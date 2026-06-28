@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { Thermometer, Droplets, Power, Activity, Clock, Sun, Moon, Info } from 'lucide-react';
+import { Thermometer, Droplets, Power, Activity, Clock, Sun, Moon, Info, LogOut } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Konfigurasi URL API Backend
-const API_URL = 'https://sishome.myporto.online/api'; 
+// const API_URL = 'http:127.0.0.1:5000/api'; 
+const API_URL = 'https://sishome.rafiathallah.space/api'; 
 const GOOGLE_CLIENT_ID ='308867522259-d3vnpt26tlv3qpbu8m52e31jmifo11vp.apps.googleusercontent.com'
 
 const App = () => {
@@ -35,6 +36,22 @@ const App = () => {
       fetchAllData(); 
     } catch (error) {
       alert('Gagal login ke server SiSHome');
+    }
+  };
+  // --- FUNGSI LOGOUT ---
+  const handleLogout = () => {
+    const confirmLogout = window.confirm('Apakah Anda yakin ingin keluar dari SiSHome?');
+    if (confirmLogout) {
+      // 1. Hapus data dari memori browser
+      localStorage.removeItem('sishome_token');
+      localStorage.removeItem('sishome_user');
+      
+      // 2. Kembalikan ke halaman login
+      setCurrentUser(null);
+      
+      // 3. (Opsional) Bersihkan data sisa di layar
+      setSensorData({ temperature: '--', humidity: '--' });
+      setRelayState(false);
     }
   };
 
@@ -191,6 +208,13 @@ const App = () => {
                 currentUser.name.substring(0, 2).toUpperCase()
               )}
             </div>
+            <button 
+              onClick={handleLogout}
+              className={`p-2 ml-2 rounded-full transition-colors ${isDarkMode ? 'bg-gray-700 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'}`}
+              title="Logout"
+            >
+              <LogOut size={20} />
+            </button>
           </div>
         </div>
       </div>

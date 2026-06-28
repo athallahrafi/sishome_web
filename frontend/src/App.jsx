@@ -89,6 +89,8 @@ const App = () => {
       setLogs(resLogs.data);
       const resChart = await axios.get(`${API_URL}/chart`);
       setChartData(resChart.data);
+      const res = await axios.get(`${API_URL}/relay/status`);
+      setRelayState(res.data.status === 'ON');
     } catch (error) {
       console.error('Gagal mengambil data dari database', error);
     }
@@ -138,7 +140,11 @@ const App = () => {
       else if (topic === 'SiSHome/status_dht') setDeviceStatus(payload);
       else if (topic === 'SiSHome/relay/status') setRelayState(payload === 'ON');
       else if (topic === 'SiSHome/relay/lock') {
-        setIsGlobalLocked(payload === 'LOCKED');
+        if (payload === 'UNLOCKED') {
+           setTimeout(() => setIsGlobalLocked(false), 500);
+        } else {
+           setIsGlobalLocked(true);
+        }
       }
     });
 

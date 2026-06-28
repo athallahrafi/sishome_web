@@ -198,7 +198,7 @@ app.post('/api/relay', async (req, res) => {
         mqttClient.publish('SiSHome/relay/lock', 'UNLOCKED');
         console.log('⚠️ [Watchdog] Gembok dilepas paksa. ESP32 tidak merespons.');
       }
-    }, 5000); 
+    }, 10000); 
 
     res.status(200).json({ message: 'Perintah sedang diproses ESP32...' });
   } catch (error) {
@@ -216,7 +216,9 @@ app.get('/api/schedules', async (req, res) => {
     res.status(500).json({ error: 'Gagal mengambil jadwal' });
   }
 });
-
+app.get('/api/relay/status', (req, res) => {
+  res.json({ status: latestRelayState });
+});
 // --- API: Membuat jadwal baru ---
 // --- API: Membuat jadwal baru ---
 app.post('/api/schedules', async (req, res) => {

@@ -204,29 +204,6 @@ const App = () => {
       }
     };
 
-    // --- HANDLER JADWAL (POST KE BACKEND) ---
-    const handleAddSchedule = async (e) => {
-      e.preventDefault();
-      if (!newScheduleTime) return;
-
-      try {
-        await axios.post(`${API_URL}/schedules`, {
-          userId: currentUser.id,
-          targetTime: newScheduleTime,
-          action: newScheduleAction,
-          repeatMode: newScheduleMode
-        });
-        setNewScheduleTime('');
-        fetchAllData(); 
-      } catch (error) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Gagal Menyimpan',
-          text: 'Jadwal tidak dapat disimpan ke database!',
-          confirmButtonColor: '#2563EB'
-        });
-      }
-    };
     if (!currentUser) {
     return (
       <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>

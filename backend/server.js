@@ -270,37 +270,38 @@ app.get('/api/chart', async (req, res) => {
   }
 });
 
-// --- CRON JOB: Pengecek Jadwal (Berjalan Setiap 1 Menit) ---
+// ================= SCHEDULER (CEK TIAP MENIT) =================
 cron.schedule('* * * * *', async () => {
-  // Ambil waktu server sekarang
-  const now = new Date();
-  const currentHHMM = new Intl.DateTimeFormat('en-GB', { 
-    timeZone: 'Asia/Jakarta', 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  }).format(new Date());
-
   try {
-    const result = await pool.query(
-      'SELECT id, action, user_id, repeat_mode FROM sishome_relay_schedules WHERE target_time = $1 AND is_active = TRUE',
+    // 1. Dapatkan jam saat ini murni dalam format WIB (HH:MM)
+    const currentHHMM = new Intl.DateTimeFormat('en-GB', { 
+      timeZone: 'Asia/Jakarta', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    }).format(new Date());
+
+    // 2. INI BARIS YANG HILANG TADI: Ambil jadwal dari database yang cocok dengan jam sekarang
+    const { rows } = await pool.query(
+      'SELECT * FROM sishome_relay_schedules WHERE target_time = $1 AND is_active = TRUE', 
       [currentHHMM]
     );
 
-    // Di dalam loop scheduler...
+    // 3. Eksekusi satu per satu (jika ada)
     for (const schedule of rows) {
-      // Bersihkan spasi gaib dari database
+      // Bersihkan spasi gaib
       const cleanAction = schedule.action.trim(); 
       
-      // Kirim perintah yang sudah bersih
+      // Kirim perintah
       mqttClient.publish('SiSHome/relay/cmd', cleanAction);
       console.log(`⏰ [Scheduler] Dieksekusi: ${cleanAction} (${schedule.repeat_mode})`);
       
+      // Matikan jadwal jika mode-nya ONCE (Sekali Jalan)
       if (schedule.repeat_mode === 'ONCE') {
         await pool.query('UPDATE sishome_relay_schedules SET is_active = FALSE WHERE id = $1', [schedule.id]);
       }
     }
   } catch (error) {
-    console.error('Scheduler Error:', error);
+    console.error('❌ Scheduler Error:', error);
   }
 });
 

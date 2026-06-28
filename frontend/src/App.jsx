@@ -165,7 +165,9 @@ const App = () => {
       else if (topic === 'SiSHome/status_dht') setDeviceStatus(payload);
       else if (topic === 'SiSHome/relay/status') {
         setRelayState(payload === 'ON');
-        fetchAllData();
+        setTimeout(() => {
+          fetchAllData();
+        }, 1000);
       }
       else if (topic === 'SiSHome/relay/lock') {
         if (payload === 'UNLOCKED') {

@@ -308,7 +308,7 @@ cron.schedule('* * * * *', async () => {
 
 
 // --- CRON JOB: Log Suhu & Kelembapan (Berjalan Setiap 15 Menit) ---
-cron.schedule('*/15 * * * *', async () => {
+cron.schedule('*/5 * * * *', async () => {
   // Hanya simpan jika nilai tidak 0 (artinya ESP32 sudah pernah mengirim data)
   if (latestSensorData.temperature !== 0 || latestSensorData.humidity !== 0) {
     try {

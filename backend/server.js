@@ -255,15 +255,27 @@ app.get('/api/logs', async (req, res) => {
   }
 });
 
+// ================= API CHART (GRAFIK SENSOR BERDASARKAN TANGGAL) =================
 app.get('/api/chart', async (req, res) => {
   try {
+    // 1. Tangkap parameter tanggal dari React. Jika kosong, gunakan hari ini (WIB).
+    let targetDate = req.query.date;
+    if (!targetDate) {
+      const now = new Date();
+      targetDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now); // Format: YYYY-MM-DD
+    }
+
+    // 2. Query ke Database dengan filter DATE() dan zona waktu yang ketat
     const result = await pool.query(`
       SELECT temperature as suhu, humidity as kelembapan, 
              TO_CHAR(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time 
       FROM sishome_sensor_logs 
-      ORDER BY created_at DESC LIMIT 10
-    `);
-    res.json(result.rows.reverse()); 
+      WHERE DATE(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta') = $1
+      ORDER BY created_at ASC
+    `, [targetDate]); 
+    // Menggunakan ASC (Ascending) agar grafik mengalir maju dari pagi ke malam
+
+    res.json(result.rows); 
   } catch (error) {
     console.error('❌ Error mengambil data chart:', error.message);
     res.status(500).json([]);

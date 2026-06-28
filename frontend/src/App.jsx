@@ -8,6 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 
 // Konfigurasi URL API Backend
 // const API_URL = 'http:127.0.0.1:5000/api'; 
+const getTodayWIB = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 const API_URL = 'https://sishome.rafiathallah.space/api'; 
 const GOOGLE_CLIENT_ID ='308867522259-d3vnpt26tlv3qpbu8m52e31jmifo11vp.apps.googleusercontent.com'
 
@@ -29,6 +30,23 @@ const App = () => {
   const [isGlobalLocked, setIsGlobalLocked] = useState(false);
   const [newScheduleMode, setNewScheduleMode] = useState('ONCE');
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [chartDate, setChartDate] = useState(getTodayWIB());
+
+
+  const fetchChartData = async (date) => {
+    try {
+      // Kirim parameter tanggal ke backend
+      const resChart = await axios.get(`${API_URL}/chart?date=${date}`);
+      setChartData(resChart.data);
+    } catch (error) {
+      console.error('Gagal mengambil grafik:', error);
+    }
+  };
+
+  // Efek ini akan otomatis berjalan SETIAP KALI kamu mengubah tanggal di kalender
+  useEffect(() => {
+    fetchChartData(chartDate);
+  }, [chartDate]);
 
   // Google OAuth Handler
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -116,6 +134,7 @@ const App = () => {
       setChartData(resChart.data);
       const res = await axios.get(`${API_URL}/relay/status`);
       setRelayState(res.data.status === 'ON');
+      fetchChartData(chartDate);
     } catch (error) {
       console.error('Gagal mengambil data dari database', error);
     }
@@ -316,7 +335,27 @@ const App = () => {
         
         {/* Grafik */}
         <div className={`p-6 rounded-2xl shadow-sm lg:col-span-2 transition-colors duration-300 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-          <h2 className={`text-lg font-bold mb-6 ${isDarkMode ? 'text-blue-400' : 'text-sishome-primary'}`}>Tren Sensor (Dari Database)</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+            <h3 className={`text-lg font-bold ${isDarkMode ? 'text-blue-400' : 'text-sishome-primary'}`}>
+              Tren Sensor 
+            </h3>
+            
+            {/* Input Tanggal */}
+            <div className="flex items-center gap-2">
+              <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Tanggal:</label>
+              <input 
+                type="date" 
+                value={chartDate}
+                onChange={(e) => setChartDate(e.target.value)}
+                max={getTodayWIB()} // Mencegah user memilih hari esok yang belum ada datanya
+                className={`px-3 py-2 border rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                  isDarkMode 
+                    ? 'bg-gray-700 border-gray-600 text-white cursor-pointer' 
+                    : 'bg-gray-50 border-gray-300 text-gray-800 cursor-pointer'
+                }`}
+              />
+            </div>
+          </div>
           <div className="h-72 w-full min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: -20 }}>
@@ -331,6 +370,11 @@ const App = () => {
               </LineChart>
             </ResponsiveContainer>
           </div>
+          {chartData.length === 0 && (
+            <p className={`text-center text-sm mt-4 font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Tidak ada data sensor pada tanggal ini.
+            </p>
+          )}
         </div>
 
         {/* Log Section */}

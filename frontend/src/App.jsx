@@ -27,6 +27,7 @@ const App = () => {
   const [isRelayLocked, setIsRelayLocked] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const [isGlobalLocked, setIsGlobalLocked] = useState(false);
+  const [newScheduleMode, setNewScheduleMode] = useState('ONCE');
 
   // Google OAuth Handler
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -188,7 +189,8 @@ const App = () => {
         await axios.post(`${API_URL}/schedules`, {
           userId: currentUser.id,
           targetTime: newScheduleTime,
-          action: newScheduleAction
+          action: newScheduleAction,
+          repeatMode: newScheduleMode
         });
         setNewScheduleTime('');
         fetchAllData(); 
@@ -373,6 +375,14 @@ const App = () => {
                   <option value="ON" className="text-sishome-accent">Turn ON</option>
                   <option value="OFF" className="text-sishome-danger">Turn OFF</option>
                 </select>
+                <select 
+                  value={newScheduleMode}
+                  onChange={(e) => setNewScheduleMode(e.target.value)}
+                  className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
+                >
+                  <option value="ONCE">Sekali Jalan</option>
+                  <option value="DAILY">Rutin Harian</option>
+                </select>
                 <button type="submit" className="bg-sishome-primary text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-blue-800 transition shadow-sm">
                   Simpan
                 </button>
@@ -387,11 +397,18 @@ const App = () => {
                 <ul className="space-y-2 max-h-40 overflow-y-auto pr-2">
                   {schedules.map((sched) => (
                     <li key={sched.id} className={`flex justify-between items-center p-3 rounded-lg border transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
-                      <span className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>{sched.target_time}</span>
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full ${sched.action === 'ON' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        Relay {sched.action}
+                    <div>
+                      <span className={`text-lg font-bold block ${isDarkMode ? 'text-white' : 'text-gray-700'}`}>{sched.target_time}</span>
+                      {/* Indikator Mode */}
+                      <span className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {sched.repeat_mode === 'DAILY' ? '🔄 Tiap Hari' : '▶️ Sekali Saja'}
                       </span>
-                    </li>
+                    </div>
+
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${sched.action === 'ON' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      Relay {sched.action}
+                    </span>
+                  </li>
                   ))}
                 </ul>
               )}

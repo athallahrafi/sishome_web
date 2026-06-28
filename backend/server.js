@@ -216,20 +216,20 @@ app.get('/api/schedules', async (req, res) => {
     res.status(500).json({ error: 'Gagal mengambil jadwal' });
   }
 });
+
 app.get('/api/relay/status', (req, res) => {
   res.json({ status: latestRelayState });
 });
-// --- API: Membuat jadwal baru ---
-// --- API: Membuat jadwal baru ---
+
 app.post('/api/schedules', async (req, res) => {
   try {
-    const { userId, targetTime, action } = req.body; 
+    // Tambahkan repeatMode yang diambil dari React
+    const { userId, targetTime, action, repeatMode } = req.body; 
     const timeFormatted = targetTime.substring(0, 5); 
-    
-    // PERBAIKAN: Tambahkan is_active ke dalam kueri
+
     await pool.query(
-      'INSERT INTO sishome_relay_schedules (user_id, target_time, action, is_active) VALUES ($1, $2, $3, $4)',
-      [userId, timeFormatted, action, true] // true ditambahkan di sini
+      'INSERT INTO sishome_relay_schedules (user_id, target_time, action, is_active, repeat_mode) VALUES ($1, $2, $3, $4, $5)',
+      [userId, timeFormatted, action, true, repeatMode || 'ONCE']
     );
     res.status(201).json({ message: 'Jadwal berhasil ditambahkan' });
   } catch (error) {
@@ -241,10 +241,7 @@ app.post('/api/schedules', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT rl.action, TO_CHAR(rl.created_at, 'HH24:MI:SS') as time, u.name as user_name 
-      FROM sishome_relay_logs rl 
-      JOIN sishome_users u ON rl.user_id = u.id 
-      ORDER BY rl.created_at DESC LIMIT 5
+      SELECT rl.action, TO_CHAR(rl.created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI:SS') as time, u.name as user_name
     `);
     res.json(result.rows);
   } catch (error) {
@@ -257,9 +254,7 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/chart', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at, 'HH24:MI') as time 
-      FROM sishome_sensor_logs 
-      ORDER BY created_at DESC LIMIT 10
+      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time
     `);
     // Dibalik (reverse) agar grafik mengalir dari waktu terlama di kiri ke terbaru di kanan
     res.json(result.rows.reverse()); 
@@ -273,7 +268,11 @@ app.get('/api/chart', async (req, res) => {
 cron.schedule('* * * * *', async () => {
   // Ambil waktu server sekarang
   const now = new Date();
-  const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const currentHHMM = new Intl.DateTimeFormat('en-GB', { 
+    timeZone: 'Asia/Jakarta', 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  }).format(new Date());
 
   try {
     const result = await pool.query(

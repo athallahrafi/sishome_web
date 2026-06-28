@@ -241,7 +241,10 @@ app.post('/api/schedules', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT rl.action, TO_CHAR(rl.created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI:SS') as time, u.name as user_name
+      SELECT rl.action, TO_CHAR(rl.created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI:SS') as time, u.name as user_name 
+      FROM sishome_relay_logs rl 
+      JOIN sishome_users u ON rl.user_id = u.id 
+      ORDER BY rl.created_at DESC LIMIT 5
     `);
     res.json(result.rows);
   } catch (error) {
@@ -254,9 +257,10 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/chart', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time
+      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time 
+      FROM sishome_sensor_logs 
+      ORDER BY created_at DESC LIMIT 10
     `);
-    // Dibalik (reverse) agar grafik mengalir dari waktu terlama di kiri ke terbaru di kanan
     res.json(result.rows.reverse()); 
   } catch (error) {
     console.error('❌ Error mengambil data chart:', error.message);

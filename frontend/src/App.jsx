@@ -26,6 +26,7 @@ const App = () => {
   const [newScheduleAction, setNewScheduleAction] = useState('ON');
   const [isRelayLocked, setIsRelayLocked] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [isGlobalLocked, setIsGlobalLocked] = useState(false);
 
   // Google OAuth Handler
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -115,8 +116,8 @@ const App = () => {
 
     const client = mqtt.connect('wss://f5c8801cf6d342bea2c68cbc379544ae.s1.eu.hivemq.cloud:8884/mqtt', {
       clientId: 'SiSHome_Web_' + Math.random().toString(16).substring(2, 8),
-      username: 'SiSHome_Dev',
-      password: 'Development0',
+      username: 'sishome_RO',
+      password: 'ReadOnlyCred123',
       clean: true,
       reconnectPeriod: 5000,
     });
@@ -125,8 +126,9 @@ const App = () => {
       setBrokerStatus('Connected');
       client.subscribe('SiSHome/degre');
       client.subscribe('SiSHome/humid');
-      client.subscribe('SiSHome/relay');
+      client.subscribe('SiSHome/relay/status');
       client.subscribe('SiSHome/status_dht');
+      client.subscribe('SiSHome/relay/lock');
     });
 
     client.on('message', (topic, message) => {
@@ -134,7 +136,10 @@ const App = () => {
       if (topic === 'SiSHome/degre') setSensorData(prev => ({ ...prev, temperature: payload }));
       else if (topic === 'SiSHome/humid') setSensorData(prev => ({ ...prev, humidity: payload }));
       else if (topic === 'SiSHome/status_dht') setDeviceStatus(payload);
-      else if (topic === 'SiSHome/relay') setRelayState(payload === 'ON');
+      else if (topic === 'SiSHome/relay/status') setRelayState(payload === 'ON');
+      else if (topic === 'SiSHome/relay/lock') {
+        setIsGlobalLocked(payload === 'LOCKED');
+      }
     });
 
     client.on('error', (err) => console.error('MQTT Error:', err));
@@ -147,38 +152,24 @@ const App = () => {
 
     // --- HANDLER RELAY (POST KE BACKEND) ---
     const toggleRelay = async () => {
-      if (isRelayLocked) {
-        Swal.fire({
-          toast: true,
-          position: 'top-end',
-          icon: 'warning',
-          title: 'Tunggu sebentar, perangkat sedang memproses perintah!',
-          showConfirmButton: false,
-          timer: 2000
-        });
-        return;
-      }
-      setIsRelayLocked(true);
-      setTimeout(() => {
-        setIsRelayLocked(false); // Buka kunci otomatis setelah 2.5 detik
-      }, 2500);
+      if (isGlobalLocked) return; // Cegah klik ganda murni
+      
       const newAction = relayState ? 'OFF' : 'ON';
-      setRelayState(!relayState);
       
       try {
         await axios.post(`${API_URL}/relay`, {
           userId: currentUser.id,
           action: newAction
         });
-        fetchAllData();
+        // Catatan: Jangan gunakan setRelayState(!relayState) di sini lagi!
+        // Biarkan MQTT (topic /status) yang mengubah warna tombolnya nanti.
       } catch (error) {
         Swal.fire({
           icon: 'error',
-          title: 'Perintah Gagal',
-          text: 'Gagal mengirim instruksi relay ke server!',
+          title: 'Perintah Ditolak',
+          text: error.response?.data?.error || 'Sistem sedang sibuk!',
           confirmButtonColor: '#2563EB'
         });
-        setRelayState(relayState); 
       }
     };
 
@@ -298,9 +289,11 @@ const App = () => {
             onClick={toggleRelay}
             className={`w-24 h-24 rounded-full flex items-center justify-center shadow-lg transition-transform transform hover:scale-105 active:scale-95 ${relayState ? 'bg-sishome-accent text-white' : (isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-400')}`}
           >
-            <Power size={48} />
+            <Power size={48} className={isGlobalLocked ? 'animate-spin' : ''} />
           </button>
-          <p className="text-xl font-bold mt-4">Status: {relayState ? 'ON' : 'OFF'}</p>
+          <p className="text-xl font-bold mt-4">
+            {isGlobalLocked ? 'Memproses...' : `Status: ${relayState ? 'ON' : 'OFF'}`}
+          </p>
         </div>
       </div>
 

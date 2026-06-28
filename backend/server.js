@@ -12,9 +12,15 @@ const rateLimit = require('express-rate-limit');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 let latestRelayState = 'OFF';
 let lastTriggeredBy = 1;
+let isRelayProcessing = false; // Status gembok global
+let lockTimeout; // Timer pengaman
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ['https://sishome.rafiathallah.space', 'https://rafiathallah.space'],
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
 app.use(express.json());
 app.set('trust proxy', 1);
 
@@ -71,6 +77,7 @@ mqttClient.on('connect', () => {
   // Subscribe ke topik yang dikirim ESP32
   mqttClient.subscribe('SiSHome/degre');
   mqttClient.subscribe('SiSHome/humid');
+  mqttClient.subscribe('SiSHome/relay/status');
   mqttClient.subscribe('SiSHome/relay');
 });
 
@@ -84,11 +91,19 @@ mqttClient.on('message', async (topic, message) => {
     else if (topic === 'SiSHome/humid') {
       latestSensorData.humidity = parseFloat(payload);
     } 
-    else if (topic === 'SiSHome/relay') {
+    else if (topic === 'SiSHome/relay/status') {
       latestRelayState = payload;
       console.log(`🔌 [Status Sync] ESP32 mengonfirmasi relay: ${latestRelayState}`);
       
-      // Catat ke Database HANYA saat ESP32 memberikan feedback
+      // --- TAMBAHKAN BLOK BUKA GEMBOK INI ---
+      if (isRelayProcessing) {
+        isRelayProcessing = false;
+        clearTimeout(lockTimeout); // Matikan alarm Watchdog
+        mqttClient.publish('SiSHome/relay/lock', 'UNLOCKED'); // Suruh semua UI User buka tombol
+      }
+      // --------------------------------------
+
+      // Catat ke Database... (kode db bawaanmu tetap di bawah ini)
       await pool.query(
         'INSERT INTO sishome_relay_logs (user_id, action) VALUES ($1, $2)',
         [lastTriggeredBy, payload] 
@@ -143,14 +158,39 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// 3. API Endpoint: Toggle Relay dari Web
+// --- API Endpoint: Toggle Relay dari Web ---
 app.post('/api/relay', async (req, res) => {
+  // 1. Tolak request jika sistem sedang dipakai orang lain (Gembok Aktif)
+  if (isRelayProcessing) {
+    return res.status(423).json({ error: 'Sistem sibuk! Pengguna lain sedang mengontrol perangkat.' });
+  }
+
   const { userId, action } = req.body; 
+  
   try {
-    lastTriggeredBy = userId; // Ingat siapa yang menekan tombol
-    mqttClient.publish('SiSHome/relay', action); // Kirim ke ESP32
-    res.status(200).json({ message: 'Perintah terkirim, menunggu balasan ESP32...' });
+    // 2. Aktifkan Gembok Global
+    isRelayProcessing = true;
+    lastTriggeredBy = userId; 
+    
+    // 3. Umumkan ke semua User (via MQTT) agar tombol mereka dikunci
+    mqttClient.publish('SiSHome/relay/lock', 'LOCKED'); 
+    
+    // 4. Kirim perintah ke ESP32
+    mqttClient.publish('SiSHome/relay/cmd', action); 
+
+    // 5. Pasang Watchdog Timer (Buka gembok paksa jika ESP32 mati/offline setelah 5 detik)
+    clearTimeout(lockTimeout);
+    lockTimeout = setTimeout(() => {
+      if (isRelayProcessing) {
+        isRelayProcessing = false;
+        mqttClient.publish('SiSHome/relay/lock', 'UNLOCKED');
+        console.log('⚠️ [Watchdog] Gembok dilepas paksa. ESP32 tidak merespons.');
+      }
+    }, 5000); 
+
+    res.status(200).json({ message: 'Perintah sedang diproses ESP32...' });
   } catch (error) {
+    isRelayProcessing = false;
     res.status(500).json({ error: 'Gagal mengirim perintah' });
   }
 });
@@ -229,7 +269,8 @@ cron.schedule('* * * * *', async () => {
 
     for (const schedule of result.rows) {
       lastTriggeredBy = schedule.user_id; // Set agar log MQTT tahu ini dari jadwal
-      mqttClient.publish('SiSHome/relay', schedule.action);
+      // mqttClient.publish('SiSHome/relay/cmd', action);
+      mqttClient.publish('SiSHome/relay/cmd', schedule.action);
       
       // Matikan is_active HANYA JIKA mode-nya 'ONCE'
       if (schedule.repeat_mode === 'ONCE') {

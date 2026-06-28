@@ -7,6 +7,7 @@ const mqtt = require('mqtt');
 const cron = require('node-cron');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 let latestRelayState = 'OFF';
@@ -15,6 +16,7 @@ let lastTriggeredBy = 1;
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.set('trust proxy', 1);
 
 // 1. Konfigurasi Database (AWS RDS / Neon)
 const pool = new Pool({
@@ -45,7 +47,23 @@ const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL, {
   clientId: 'SiSHome_Backend_' + Math.random().toString(16).substring(2, 8)
 });
 
-// Variabel penyimpan data sensor terakhir (karena dipisah topiknya oleh ESP32)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // Durasi 15 menit
+  max: 150, // Maksimal 150 request per IP dalam 15 menit
+  message: { error: 'Terlalu banyak aktivitas dari IP ini. Silakan coba lagi setelah 15 menit.' },
+  standardHeaders: true, // Kembalikan info limit di header RateLimit-*
+  legacyHeaders: false, // Matikan header X-RateLimit-* yang sudah usang
+});
+
+app.use('/api/', globalLimiter);
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // Durasi 1 Jam
+  max: 10, // Maksimal 10 percobaan login per IP per jam
+  message: { error: 'Terlalu banyak percobaan login. Akun Anda diamankan sementara, coba lagi 1 jam kemudian.' }
+});
+app.use('/api/auth/google', authLimiter);
+
 let latestSensorData = { temperature: 0, humidity: 0 };
 
 mqttClient.on('connect', () => {

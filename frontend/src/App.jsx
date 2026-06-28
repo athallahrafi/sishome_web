@@ -24,6 +24,8 @@ const App = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [newScheduleTime, setNewScheduleTime] = useState('');
   const [newScheduleAction, setNewScheduleAction] = useState('ON');
+  const [isRelayLocked, setIsRelayLocked] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
 
   // Google OAuth Handler
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -90,6 +92,16 @@ const App = () => {
       console.error('Gagal mengambil data dari database', error);
     }
   };
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchValue) {
+        console.log('Mengirim API Request untuk mencari:', searchValue);
+        // axios.get(`/api/search?q=${searchValue}`)
+      }
+    }, 1000);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchValue]);
   useEffect(() => {
     const savedUser = localStorage.getItem('sishome_user');
     if (savedUser) {
@@ -135,6 +147,21 @@ const App = () => {
 
     // --- HANDLER RELAY (POST KE BACKEND) ---
     const toggleRelay = async () => {
+      if (isRelayLocked) {
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'warning',
+          title: 'Tunggu sebentar, perangkat sedang memproses perintah!',
+          showConfirmButton: false,
+          timer: 2000
+        });
+        return;
+      }
+      setIsRelayLocked(true);
+      setTimeout(() => {
+        setIsRelayLocked(false); // Buka kunci otomatis setelah 2.5 detik
+      }, 2500);
       const newAction = relayState ? 'OFF' : 'ON';
       setRelayState(!relayState);
       

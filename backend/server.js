@@ -16,9 +16,21 @@ let isRelayProcessing = false; // Status gembok global
 let lockTimeout; // Timer pengaman
 
 const app = express();
+const allowedOrigins = ['https://rafiathallah.space', 'https://sishome.rafiathallah.space'];
 app.use(cors({
-  origin: ['https://sishome.rafiathallah.space', 'https://rafiathallah.space'],
+  origin: function (origin, callback) {
+    // Izinkan request tanpa origin (misal dari curl, postman, atau alat IoT langsung)
+    if (!origin) return callback(null, true);
+    
+    // Cek apakah origin ada di daftar yang diizinkan
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true
 }));
 app.use(express.json());

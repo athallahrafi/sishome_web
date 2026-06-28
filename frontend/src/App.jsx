@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { Thermometer, Droplets, Power, Activity, Clock, Sun, Moon, Info, LogOut } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -35,24 +36,45 @@ const App = () => {
       setCurrentUser(res.data.userData);
       fetchAllData(); 
     } catch (error) {
-      alert('Gagal login ke server SiSHome');
+      Swal.fire({
+        icon: 'error',
+        title: 'Login Gagal',
+        text: 'Tidak dapat terhubung ke server SiSHome.',
+        confirmButtonColor: '#2563EB'
+      });
     }
   };
   // --- FUNGSI LOGOUT ---
   const handleLogout = () => {
-    const confirmLogout = window.confirm('Apakah Anda yakin ingin keluar dari SiSHome?');
-    if (confirmLogout) {
-      // 1. Hapus data dari memori browser
-      localStorage.removeItem('sishome_token');
-      localStorage.removeItem('sishome_user');
-      
-      // 2. Kembalikan ke halaman login
-      setCurrentUser(null);
-      
-      // 3. (Opsional) Bersihkan data sisa di layar
-      setSensorData({ temperature: '--', humidity: '--' });
-      setRelayState(false);
-    }
+    Swal.fire({
+      title: 'Keluar dari SiSHome?',
+      text: "Sesi Anda akan diakhiri dan perangkat akan terputus.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#EF4444', // Warna merah untuk tombol keluar
+      cancelButtonColor: '#9CA3AF',  // Warna abu-abu untuk batal
+      confirmButtonText: 'Ya, Keluar!',
+      cancelButtonText: 'Batal'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        // Eksekusi pembersihan data
+        localStorage.removeItem('sishome_token');
+        localStorage.removeItem('sishome_user');
+        setCurrentUser(null);
+        setSensorData({ temperature: '--', humidity: '--' });
+        setRelayState(false);
+        
+        // Notifikasi sukses kecil di pojok (Toast)
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'success',
+          title: 'Berhasil keluar',
+          showConfirmButton: false,
+          timer: 2000
+        });
+      }
+    });
   };
 
   // --- FUNGSI MENGAMBIL DATA DARI DATABASE ---
@@ -123,7 +145,12 @@ const App = () => {
         });
         fetchAllData();
       } catch (error) {
-        alert('Gagal mengirim perintah relay ke server!');
+        Swal.fire({
+          icon: 'error',
+          title: 'Perintah Gagal',
+          text: 'Gagal mengirim instruksi relay ke server!',
+          confirmButtonColor: '#2563EB'
+        });
         setRelayState(relayState); 
       }
     };
@@ -142,7 +169,12 @@ const App = () => {
         setNewScheduleTime('');
         fetchAllData(); 
       } catch (error) {
-        alert('Gagal menyimpan jadwal ke database!');
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal Menyimpan',
+          text: 'Jadwal tidak dapat disimpan ke database!',
+          confirmButtonColor: '#2563EB'
+        });
       }
     };
     if (!currentUser) {

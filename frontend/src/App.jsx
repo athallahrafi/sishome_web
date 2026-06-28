@@ -28,6 +28,7 @@ const App = () => {
   const [searchValue, setSearchValue] = useState('');
   const [isGlobalLocked, setIsGlobalLocked] = useState(false);
   const [newScheduleMode, setNewScheduleMode] = useState('ONCE');
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   // Google OAuth Handler
   const handleGoogleSuccess = async (credentialResponse) => {
@@ -48,7 +49,30 @@ const App = () => {
       });
     }
   };
-  // --- FUNGSI LOGOUT ---
+  const handleAddSchedule = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/schedules`, {
+        userId: currentUser.id,
+        targetTime: newScheduleTime,
+        action: newScheduleAction,
+        repeatMode: newScheduleMode
+      });
+      
+      // Reset form
+      setNewScheduleTime('');
+      setNewScheduleAction('ON');
+      setNewScheduleMode('ONCE');
+      
+      // TUTUP MODAL SETELAH SUKSES
+      setIsScheduleModalOpen(false); 
+      
+      fetchAllData();
+      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Jadwal ditambahkan', showConfirmButton: false, timer: 1500 });
+    } catch (error) {
+      console.error('Gagal menambah jadwal', error);
+    }
+  };
   const handleLogout = () => {
     Swal.fire({
       title: 'Keluar dari SiSHome?',
@@ -358,35 +382,19 @@ const App = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
             <div>
-              <h3 className={`text-sm font-bold mb-3 ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`}>Buat Jadwal Baru</h3>
-              <form onSubmit={handleAddSchedule} className="flex gap-2">
-                <input 
-                  type="time" 
-                  value={newScheduleTime}
-                  onChange={(e) => setNewScheduleTime(e.target.value)}
-                  className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
-                  required
-                />
-                <select 
-                  value={newScheduleAction}
-                  onChange={(e) => setNewScheduleAction(e.target.value)}
-                  className={`border rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:border-blue-400 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
-                >
-                  <option value="ON" className="text-sishome-accent">Turn ON</option>
-                  <option value="OFF" className="text-sishome-danger">Turn OFF</option>
-                </select>
-                <select 
-                  value={newScheduleMode}
-                  onChange={(e) => setNewScheduleMode(e.target.value)}
-                  className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
-                >
-                  <option value="ONCE">Sekali Jalan</option>
-                  <option value="DAILY">Rutin Harian</option>
-                </select>
-                <button type="submit" className="bg-sishome-primary text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-blue-800 transition shadow-sm">
-                  Simpan
-                </button>
-              </form>
+              <button 
+                onClick={() => setIsScheduleModalOpen(true)}
+                className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition shadow-sm
+                  ${isDarkMode 
+                    ? 'bg-blue-600 text-white hover:bg-blue-500' 
+                    : 'bg-sishome-primary text-white hover:bg-blue-800'
+                  }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Buat Jadwal Baru
+              </button>
             </div>
 
             <div>
@@ -417,6 +425,88 @@ const App = () => {
           
         </div>
       </div>
+              {/* ================= MODAL TAMBAH JADWAL ================= */}
+        {isScheduleModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60 backdrop-blur-sm">
+            <div className={`w-full max-w-md p-6 rounded-2xl shadow-2xl transform transition-all ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>
+              
+              {/* Header Modal */}
+              <div className="flex justify-between items-center mb-5">
+                <h3 className="text-xl font-bold">Atur Jadwal Otomatis</h3>
+                <button 
+                  onClick={() => setIsScheduleModalOpen(false)} 
+                  className="text-gray-400 hover:text-red-500 transition"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Form Input (Format Vertikal agar rapi) */}
+              <form onSubmit={handleAddSchedule} className="flex flex-col gap-4">
+                
+                {/* Input Waktu */}
+                <div>
+                  <label className={`block text-sm font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Pilih Waktu (WIB)</label>
+                  <input 
+                    type="time" 
+                    value={newScheduleTime}
+                    onChange={(e) => setNewScheduleTime(e.target.value)}
+                    className={`w-full border rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'}`}
+                    required
+                  />
+                </div>
+
+                {/* Flex Container untuk Aksi & Mode */}
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className={`block text-sm font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Perintah</label>
+                    <select 
+                      value={newScheduleAction}
+                      onChange={(e) => setNewScheduleAction(e.target.value)}
+                      className={`w-full border rounded-lg px-3 py-3 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-300'}`}
+                    >
+                      <option value="ON" className="text-green-600">Nyala (ON)</option>
+                      <option value="OFF" className="text-red-600">Mati (OFF)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex-1">
+                    <label className={`block text-sm font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Tipe Ulang</label>
+                    <select 
+                      value={newScheduleMode}
+                      onChange={(e) => setNewScheduleMode(e.target.value)}
+                      className={`w-full border rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-300'}`}
+                    >
+                      <option value="ONCE">1x Jalan</option>
+                      <option value="DAILY">Tiap Hari</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tombol Aksi */}
+                <div className="flex gap-3 mt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsScheduleModalOpen(false)} 
+                    className={`flex-1 py-3 rounded-lg font-bold transition-colors ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 bg-sishome-primary text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition shadow-md"
+                  >
+                    Simpan Jadwal
+                  </button>
+                </div>
+
+              </form>
+            </div>
+          </div>
+        )}
+        {/* ================= AKHIR MODAL ================= */}
 
     </div>
   );

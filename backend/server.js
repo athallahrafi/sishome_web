@@ -241,7 +241,9 @@ app.post('/api/schedules', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT rl.action, TO_CHAR(rl.created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI:SS') as time, u.name as user_name 
+      SELECT rl.action, 
+             TO_CHAR(rl.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta', 'HH24:MI:SS') as time, 
+             u.name as user_name 
       FROM sishome_relay_logs rl 
       JOIN sishome_users u ON rl.user_id = u.id 
       ORDER BY rl.created_at DESC LIMIT 5
@@ -253,11 +255,11 @@ app.get('/api/logs', async (req, res) => {
   }
 });
 
-// --- API: Mengambil Data Grafik Sensor (10 Pembacaan Terakhir) ---
 app.get('/api/chart', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT temperature as suhu, humidity as kelembapan, TO_CHAR(created_at AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time 
+      SELECT temperature as suhu, humidity as kelembapan, 
+             TO_CHAR(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta', 'HH24:MI') as time 
       FROM sishome_sensor_logs 
       ORDER BY created_at DESC LIMIT 10
     `);
@@ -284,21 +286,18 @@ cron.schedule('* * * * *', async () => {
       [currentHHMM]
     );
 
-    for (const schedule of result.rows) {
-      lastTriggeredBy = schedule.user_id; // Set agar log MQTT tahu ini dari jadwal
-      // mqttClient.publish('SiSHome/relay/cmd', action);
-      mqttClient.publish('SiSHome/relay/cmd', schedule.action);
+    // Di dalam loop scheduler...
+    for (const schedule of rows) {
+      // Bersihkan spasi gaib dari database
+      const cleanAction = schedule.action.trim(); 
       
-      // Matikan is_active HANYA JIKA mode-nya 'ONCE'
+      // Kirim perintah yang sudah bersih
+      mqttClient.publish('SiSHome/relay/cmd', cleanAction);
+      console.log(`⏰ [Scheduler] Dieksekusi: ${cleanAction} (${schedule.repeat_mode})`);
+      
       if (schedule.repeat_mode === 'ONCE') {
-        await pool.query(
-          'UPDATE sishome_relay_schedules SET is_active = FALSE WHERE id = $1',
-          [schedule.id]
-        );
+        await pool.query('UPDATE sishome_relay_schedules SET is_active = FALSE WHERE id = $1', [schedule.id]);
       }
-      // Jika 'DAILY', biarkan is_active tetap TRUE agar besok dieksekusi lagi
-      
-      console.log(`⏰ [Scheduler] Dieksekusi: ${schedule.action} (${schedule.repeat_mode})`);
     }
   } catch (error) {
     console.error('Scheduler Error:', error);

@@ -163,7 +163,10 @@ const App = () => {
       if (topic === 'SiSHome/degre') setSensorData(prev => ({ ...prev, temperature: payload }));
       else if (topic === 'SiSHome/humid') setSensorData(prev => ({ ...prev, humidity: payload }));
       else if (topic === 'SiSHome/status_dht') setDeviceStatus(payload);
-      else if (topic === 'SiSHome/relay/status') setRelayState(payload === 'ON');
+      else if (topic === 'SiSHome/relay/status') {
+        setRelayState(payload === 'ON');
+        fetchAllData();
+      }
       else if (topic === 'SiSHome/relay/lock') {
         if (payload === 'UNLOCKED') {
            setTimeout(() => setIsGlobalLocked(false), 500);
